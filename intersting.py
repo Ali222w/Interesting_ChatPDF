@@ -262,4 +262,3 @@ if human_input := st.chat_input("Ask something about the document"):
         with st.chat_message("assistant"):
             st.markdown(error_message)
         save_chat_history(st.session_state.chat_history)
-Last edited just now
