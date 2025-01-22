@@ -97,7 +97,7 @@ Questions: {input}
     else:
         st.error("Please enter both API keys to proceed.")
 
-st.title("Mohammed Al-Yaseen | BGC ChatBot")
+st.title("BGC ChatBot")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
