@@ -1,5 +1,7 @@
- import streamlit as st
+import streamlit as st
 import os
+import json
+from datetime import datetime
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -11,8 +13,31 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 groq_api_key = "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"
 google_api_key = "AIzaSyDdAiOdIa2I28sphYw36Genb4D--2IN1tU"
 
+# Function to load chat history from file
+def load_chat_history():
+    try:
+        with open('chat_history.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return []
+
+# Function to save chat history to file
+def save_chat_history(messages):
+    with open('chat_history.json', 'w') as f:
+        json.dump(messages, f)
+
+# Initialize session state for chat history
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = load_chat_history()
+
 # Sidebar configuration
 with st.sidebar:
+    # Add clear history button
+    if st.button('Clear Chat History'):
+        st.session_state.chat_history = []
+        save_chat_history([])
+        st.success('Chat history cleared!')
+
     # Validate API key inputs and initialize components if valid
     if groq_api_key and google_api_key:
         # Set Google API key as environment variable
@@ -24,7 +49,7 @@ with st.sidebar:
         # Define the chat prompt template
         prompt = ChatPromptTemplate.from_template(
             """
-           Attention Model: You are a specialized chatbot designed to assist individuals in the oil and gas industry, with a particular focus on content related to the Basrah Gas Company (BGC). Your responses must primarily rely on the PDF files uploaded by the user, which contain information specific to the oil and gas sector and BGC's operational procedures.
+               Attention Model: You are a specialized chatbot designed to assist individuals in the oil and gas industry, with a particular focus on content related to the Basrah Gas Company (BGC). Your responses must primarily rely on the PDF files uploaded by the user, which contain information specific to the oil and gas sector and BGC's operational procedures.
 When providing responses, you must:
 
 Structure Your Answer:
@@ -140,24 +165,23 @@ Thank you for your accuracy, professionalism, and commitment to providing except
             {context}
             </context>
             Question: {input}
+            Previous conversation context: {chat_history}
             """
+           
         )
 
         # Load existing embeddings from files
         if "vectors" not in st.session_state:
             with st.spinner("Loading embeddings... Please wait."):
-                # Initialize embeddings
                 embeddings = GoogleGenerativeAIEmbeddings(
                     model="models/embedding-001"
                 )
 
-                # Load existing FAISS index with safe deserialization
-                embeddings_path = "embeddings"  # Path to your embeddings folder
                 try:
                     st.session_state.vectors = FAISS.load_local(
-                        embeddings_path,
+                        "embeddings",
                         embeddings,
-                        allow_dangerous_deserialization=True  # Only use if you trust the source of the embeddings
+                        allow_dangerous_deserialization=True
                     )
                     st.sidebar.write("Embeddings loaded successfully :partying_face:")
                 except Exception as e:
@@ -170,18 +194,28 @@ Thank you for your accuracy, professionalism, and commitment to providing except
 # Main area for chat interface
 st.title("Mohammed Al-Yaseen | BGC ChatBot")
 
-# Initialize session state for chat messages if not already done
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
 # Display chat history
-for message in st.session_state.messages:
+for message in st.session_state.chat_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
 # Input field for user queries
 if human_input := st.chat_input("Ask something about the document"):
-    st.session_state.messages.append({"role": "user", "content": human_input})
+    # Format chat history for context
+    chat_history_text = "\n".join([
+        f"{msg['role']}: {msg['content']}" 
+        for msg in st.session_state.chat_history[-5:]  # Include last 5 messages for context
+    ])
+    
+    # Add timestamp to the message
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user_message = {
+        "role": "user",
+        "content": human_input,
+        "timestamp": timestamp
+    }
+    
+    st.session_state.chat_history.append(user_message)
     with st.chat_message("user"):
         st.markdown(human_input)
 
@@ -192,15 +226,25 @@ if human_input := st.chat_input("Ask something about the document"):
         retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
         # Get response from the assistant
-        response = retrieval_chain.invoke({"input": human_input})
+        response = retrieval_chain.invoke({
+            "input": human_input,
+            "chat_history": chat_history_text
+        })
         assistant_response = response["answer"]
 
-        # Append and display assistant's response
-        st.session_state.messages.append(
-            {"role": "assistant", "content": assistant_response}
-        )
+        # Add timestamp to assistant's response
+        assistant_message = {
+            "role": "assistant",
+            "content": assistant_response,
+            "timestamp": timestamp
+        }
+        
+        st.session_state.chat_history.append(assistant_message)
         with st.chat_message("assistant"):
             st.markdown(assistant_response)
+
+        # Save updated chat history
+        save_chat_history(st.session_state.chat_history)
 
         # Display supporting information from documents
         with st.expander("Supporting Information"):
@@ -208,12 +252,14 @@ if human_input := st.chat_input("Ask something about the document"):
                 st.write(doc.page_content)
                 st.write("--------------------------------")
     else:
-        # Error message if vectors aren't loaded
-        assistant_response = (
-            "Error: Unable to load embeddings. Please check the embeddings folder and ensure the files are correct."
-        )
-        st.session_state.messages.append(
-            {"role": "assistant", "content": assistant_response}
-        )
+        error_message = "Error: Unable to load embeddings. Please check the embeddings folder and ensure the files are correct."
+        error_message_with_timestamp = {
+            "role": "assistant",
+            "content": error_message,
+            "timestamp": timestamp
+        }
+        st.session_state.chat_history.append(error_message_with_timestamp)
         with st.chat_message("assistant"):
-            st.markdown(assistant_response)
+            st.markdown(error_message)
+        save_chat_history(st.session_state.chat_history)
+Last edited just now
