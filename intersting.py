@@ -114,10 +114,10 @@ if human_input := st.chat_input("Ask something about the document"):
         st.markdown(human_input)
 
     if "vectors" in st.session_state and st.session_state.vectors is not None:
+        # Updated document chain creation without memory parameter
         document_chain = create_stuff_documents_chain(
             llm,
-            prompt,
-            memory=st.session_state.memory
+            prompt
         )
         retriever = st.session_state.vectors.as_retriever()
         retrieval_chain = create_retrieval_chain(retriever, document_chain)
