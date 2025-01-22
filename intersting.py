@@ -7,6 +7,8 @@ from langchain.chains import create_retrieval_chain
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.memory import ConversationBufferMemory
+from typing import List
+from langchain_core.documents import Document
 import re
 
 groq_api_key = "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"
@@ -15,6 +17,13 @@ google_api_key = "AIzaSyDdAiOdIa2I28sphYw36Genb4D--2IN1tU"
 def extract_number(text):
     numbers = re.findall(r'\d+', text)
     return int(numbers[-1]) if numbers else None
+
+def get_page_numbers(docs: List[Document]) -> List[int]:
+    page_numbers = []
+    for doc in docs:
+        if hasattr(doc.metadata, 'page') and doc.metadata['page'] is not None:
+            page_numbers.append(doc.metadata['page'])
+    return sorted(list(set(page_numbers)))  # Remove duplicates and sort
 
 with st.sidebar:
     if groq_api_key and google_api_key:
@@ -30,9 +39,10 @@ Under no circumstances should you use or rely on information from external sourc
 Guidelines:
 1. **Primary Source Referencing:**
 - Always reference the specific page number(s) in the uploaded PDFs where relevant information is found. 
+The page numbers for this response can be found in this list: {page_numbers}
+Please include these page numbers in your response when citing information.
 If the PDFs contain partial or related information, integrate it with logical reasoning to provide a comprehensive response. 
 Clearly distinguish between PDF-derived content and logical extrapolations to ensure transparency.
-Additionally, explicitly mention the total number of pages referenced in your response.
 
 2. **Logical Reasoning:**
 - When specific answers are unavailable in the PDFs, use your internal knowledge to provide logical, industry-relevant responses. 
@@ -54,15 +64,6 @@ Maintain a helpful, respectful, and clear tone throughout your interactions.
 - Detect the language of the user's input (Arabic or English) and respond in the same language. 
 If the input is in Arabic, provide the response in Arabic. If the input is in English, provide the response in English.
 
-Expected Output:
-- Precise and accurate answers derived from the uploaded PDFs, with references to specific page numbers where applicable. Include the total number of pages referenced in your response.
-- Logical and well-reasoned responses when direct answers are not available in the PDFs, with clear attribution to reasoning.
-- Accurate visual representations (when requested) based on PDF content or logical reasoning. Provide a relevant photo or diagram if it enhances understanding.
-- Polite acknowledgments when information is unavailable in the provided material, coupled with logical insights where possible.
-- Responses in the same language as the user's input (Arabic or English).
-
-Thank you for your accuracy, professionalism, and commitment to providing exceptional assistance tailored to the Basrah Gas Company and the oil and gas industry.
-
 Answer the questions based on the provided context only.
 Please provide the most accurate response based on the question.
 <context>
@@ -77,9 +78,6 @@ Questions: {input}
                 return_messages=True
             )
             
-        if "last_number" not in st.session_state:
-            st.session_state.last_number = None
-
         if "vectors" not in st.session_state:
             with st.spinner("Loading embeddings... Please wait."):
                 embeddings = GoogleGenerativeAIEmbeddings(
@@ -114,12 +112,17 @@ if human_input := st.chat_input("Ask something about the document"):
         st.markdown(human_input)
 
     if "vectors" in st.session_state and st.session_state.vectors is not None:
-        # Updated document chain creation without memory parameter
+        retriever = st.session_state.vectors.as_retriever()
+        # First get relevant documents to extract page numbers
+        relevant_docs = retriever.get_relevant_documents(human_input)
+        page_numbers = get_page_numbers(relevant_docs)
+        
+        # Create the document chain with the page numbers included in the prompt
         document_chain = create_stuff_documents_chain(
             llm,
-            prompt
+            prompt.partial(page_numbers=page_numbers)
         )
-        retriever = st.session_state.vectors.as_retriever()
+        
         retrieval_chain = create_retrieval_chain(retriever, document_chain)
         
         response = retrieval_chain.invoke({
@@ -129,10 +132,6 @@ if human_input := st.chat_input("Ask something about the document"):
         
         assistant_response = response["answer"]
         
-        number = extract_number(assistant_response)
-        if number is not None:
-            st.session_state.last_number = number
-            
         st.session_state.memory.chat_memory.add_user_message(human_input)
         st.session_state.memory.chat_memory.add_ai_message(assistant_response)
 
@@ -144,6 +143,7 @@ if human_input := st.chat_input("Ask something about the document"):
 
         with st.expander("Supporting Information"):
             for i, doc in enumerate(response["context"]):
+                st.write(f"Page {doc.metadata.get('page', 'Unknown')}")
                 st.write(doc.page_content)
                 st.write("--------------------------------")
     else:
