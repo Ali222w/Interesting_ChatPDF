@@ -1,12 +1,14 @@
-faiss-cpu
+faiss-cpu==1.7.4
 groq
 langchain-groq
 PyPDF2
+pypdf
 langchain_google_genai
 langchain
-streamlit
 langchain_community
-pypdf
-google-cloud-aiplatform>=1.38
+streamlit
+streamlit-chat
 speechrecognition==3.8.1
 pyaudio==0.2.13
+google-cloud-aiplatform>=1.38
+python-dotenv  # Optional, if you use .env files
