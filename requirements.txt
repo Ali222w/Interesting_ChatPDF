@@ -9,3 +9,4 @@ pypdf
 google-cloud-aiplatform>=1.38
 pyaudio
 SpeechRecognition
+portaudio19-dev
